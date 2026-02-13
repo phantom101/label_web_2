@@ -148,6 +148,18 @@ class implementation:
             'offset_y': 0
         }
 
+    def _should_use_cups_mode_in_new_workflow(self):
+        """Determine if CUPS mode should be used in new workflow based only on NEW_WORKFLOW_CUPS_MODE."""
+        cups_mode = self.CONFIG.get('PRINTER', {}).get('NEW_WORKFLOW_CUPS_MODE', 'auto')
+        
+        if cups_mode == 'always':
+            return True
+        elif cups_mode == 'never':
+            return False
+        else:  # auto
+            # Auto mode defaults to direct mode (non-CUPS) for maximum compatibility
+            return False
+
     def _parse_media_name(self, media_name):
         # CUPS media names are often like 'na_index-4x6_4x6in' or 'iso_a4_210x297mm'
         # We'll try to extract the size part for short name, and a readable long name
@@ -586,13 +598,16 @@ class implementation:
 
     def print_label_direct(self, im, **context):
         """
-        New print workflow: Print image 1:1 without additional size information.
-        The image is assumed to be already in the correct label dimensions.
+        Enhanced new print workflow: Handles both CUPS and non-CUPS applications.
+        - For CUPS: Sends image + exact media size matching image dimensions
+        - For others: Sends only image (1:1 printing)
         """
         return_dict = {'success': False, 'message': ''}
         try:
             dpi = self.get_printer_dpi_config()
-            print(f"Using new print workflow - printing image 1:1 at {dpi} DPI")
+            use_cups_mode = self._should_use_cups_mode_in_new_workflow()
+            
+            print(f"Using new print workflow - {'CUPS mode' if use_cups_mode else 'direct mode'} at {dpi} DPI")
             print(f"Image size: {im.size}")
             
             # Save the image with the configured DPI
@@ -608,14 +623,32 @@ class implementation:
                 print("No printer specified in Config")
                 printer_name = str(conn.getDefault())
 
-            # Build print options with ONLY copies - no media size information
+            # Build print options based on mode
             options = {"copies": str(quantity)}
+            
+            if use_cups_mode:
+                # CUPS mode: Add media size that exactly matches image dimensions
+                label_size = context.get("label_size")
+                if label_size:
+                    # Convert image dimensions to CUPS media format
+                    width_px, height_px = im.size
+                    width_mm = (width_px / dpi) * 25.4
+                    height_mm = (height_px / dpi) * 25.4
+                    cups_media_name = f"Custom.{int(round(width_mm))}x{int(round(height_mm))}mm"
+                    options["media"] = cups_media_name
+                    print(f"CUPS mode: Added media '{cups_media_name}' matching image size {width_px}x{height_px}px")
+                else:
+                    print("CUPS mode: No label_size provided, using image-only mode")
+            else:
+                # Direct mode: No media size information
+                print("Direct mode: Sending image without media size information")
 
             print(f"Printing to {printer_name} with options: {options}")
             conn.printFile(printer_name, 'sample-out.png', "grocy", options)
 
             return_dict['success'] = True
-            return_dict['message'] = f"Successfully printed {quantity} label(s) using 1:1 workflow at {dpi} DPI"
+            mode_desc = "CUPS mode" if use_cups_mode else "direct mode"
+            return_dict['message'] = f"Successfully printed {quantity} label(s) using {mode_desc} at {dpi} DPI"
         except Exception as e:
             return_dict['success'] = False
             return_dict['message'] = str(e)

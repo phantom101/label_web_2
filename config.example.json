@@ -8,6 +8,7 @@
     "USE_CUPS": false,
     "USE_NEW_PRINT_WORKFLOW": false,
     "PRINTER_DPI": 300,
+    "NEW_WORKFLOW_CUPS_MODE": "auto",
     "SERVER": "192.168.1.176",
     "PRINTER": "Zebra-LP2844",
     "LABEL_SIZES": {
