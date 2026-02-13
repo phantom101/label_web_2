@@ -104,6 +104,10 @@ class implementation:
         """Get printer DPI from configuration, with fallback to 203 DPI."""
         return self.CONFIG.get('PRINTER', {}).get('PRINTER_DPI', 203)
 
+    def _should_send_original_img_dimensions(self):
+        """Determine if original image dimensions should be sent with the print job."""
+        return self.CONFIG.get('PRINTER', {}).get('SEND_ORIGINAL_IMG_DIMENSION', False)
+
     def get_label_offset_config(self, label_size=None):
         """Get label offset configuration for specific label size in new workflow."""
         if not label_size:
@@ -147,22 +151,6 @@ class implementation:
             'offset_x': 0,
             'offset_y': 0
         }
-
-    def _should_send_original_img_dimensions(self):
-        """Determine if original image dimensions should be sent with the print job."""
-        return self.CONFIG.get('PRINTER', {}).get('SEND_ORIGINAL_IMG_DIMENSION', False)
-
-    def _should_use_cups_mode_in_new_workflow(self):
-        """Determine if CUPS mode should be used in new workflow based only on NEW_WORKFLOW_CUPS_MODE."""
-        cups_mode = self.CONFIG.get('PRINTER', {}).get('NEW_WORKFLOW_CUPS_MODE', 'auto')
-        
-        if cups_mode == 'always':
-            return True
-        elif cups_mode == 'never':
-            return False
-        else:  # auto
-            # Auto mode defaults to direct mode (non-CUPS) for maximum compatibility
-            return False
 
     def _parse_media_name(self, media_name):
         # CUPS media names are often like 'na_index-4x6_4x6in' or 'iso_a4_210x297mm'
