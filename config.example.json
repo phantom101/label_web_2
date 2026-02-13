@@ -6,6 +6,8 @@
   },
   "PRINTER": {
     "USE_CUPS": false,
+    "USE_NEW_PRINT_WORKFLOW": false,
+    "PRINTER_DPI": 300,
     "SERVER": "192.168.1.176",
     "PRINTER": "Zebra-LP2844",
     "LABEL_SIZES": {
@@ -13,8 +15,22 @@
                "1x3": "1\" x 3\""
 	},
     "LABEL_PRINTABLE_AREA": {
-                "3x1": [609, 203],
-                "1x3": [203, 609]
+                "3x1": {
+                  "dimensions": [609, 203],
+                  "offset": {
+                    "enabled": false,
+                    "offset_x": 0,
+                    "offset_y": 0
+                  }
+                },
+                "1x3": {
+                  "dimensions": [203, 609],
+                  "offset": {
+                    "enabled": false,
+                    "offset_x": 0,
+                    "offset_y": 0
+                  }
+                }
                 }
   },
   "LABEL": {

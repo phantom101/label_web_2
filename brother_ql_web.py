@@ -144,7 +144,11 @@ def printtemplate(templatefile):
     if DEBUG:
         im.save('sample-out.png')
 
-    return instance.print_label(im, **context)
+    # Choose print workflow based on configuration
+    if hasattr(instance, '_should_use_new_print_workflow') and instance._should_use_new_print_workflow():
+        return instance.print_label_direct(im, **context)
+    else:
+        return instance.print_label(im, **context)
 
 @route('/health', method=['GET', 'POST'])
 @enable_cors
@@ -268,13 +272,37 @@ def create_label_from_template(template, payload, **kwargs):
     margin_bottom = ElementBase.get_value(template, kwargs, 'margin_bottom', margin_top)
     margins = [margin_left, margin_top, margin_right, margin_bottom]
 
-    im = Image.new('RGBA', (width, height), 'white')
+    # Apply label offset for new workflow if enabled
+    final_width = width
+    final_height = height
+    offset_x = 0
+    offset_y = 0
+    
+    if hasattr(instance, '_should_use_new_print_workflow') and instance._should_use_new_print_workflow():
+        # Get label size from context to check for offset configuration
+        label_size = kwargs.get('label_size')
+        offset_config = instance.get_label_offset_config(label_size)
+        if offset_config['enabled']:
+            offset_x = offset_config['offset_x']
+            offset_y = offset_config['offset_y']
+            final_width = width + offset_x
+            final_height = height + offset_y
+            print(f"Applied label offset for '{label_size}': x={offset_x}, y={offset_y}, new size: {final_width}x{final_height}")
+
+    im = Image.new('RGBA', (final_width, final_height), 'white')
     draw = ImageDraw.Draw(im)
 
     elements = template.get('elements', [])
 
     for element in elements:
         ElementBase.process_with_plugins(element, im, margins, dimensions, payload, **kwargs)
+
+    # Set DPI for new workflow if enabled
+    if hasattr(instance, '_should_use_new_print_workflow') and instance._should_use_new_print_workflow():
+        dpi = instance.get_printer_dpi_config()
+        # Add DPI info to image metadata for proper 1:1 printing
+        im.info['dpi'] = (dpi, dpi)
+        print(f"Created template image with dimensions {final_width}x{final_height} at {dpi} DPI (offset: {offset_x}, {offset_y})")
 
     return im
 
@@ -377,6 +405,36 @@ def create_label_im(text, **kwargs):
     draw = ImageDraw.Draw(im)
     offset = instance.get_label_offset(width, height, textsize, **kwargs)
     draw.multiline_text(offset, text, kwargs['fill_color'], font=im_font, align=kwargs['align'])
+    
+    # Apply label offset for new workflow if enabled
+    final_width = width
+    final_height = height
+    offset_x = 0
+    offset_y = 0
+    
+    if hasattr(instance, '_should_use_new_print_workflow') and instance._should_use_new_print_workflow():
+        # Get label size from context to check for offset configuration
+        label_size = kwargs.get('label_size')
+        offset_config = instance.get_label_offset_config(label_size)
+        if offset_config['enabled']:
+            offset_x = offset_config['offset_x']
+            offset_y = offset_config['offset_y']
+            final_width = width + offset_x
+            final_height = height + offset_y
+            
+            # Create new larger image and paste the original at offset position
+            new_im = Image.new('RGB', (final_width, final_height), 'white')
+            new_im.paste(im, (offset_x, offset_y))
+            im = new_im
+            print(f"Applied label offset for '{label_size}': x={offset_x}, y={offset_y}, new size: {final_width}x{final_height}")
+    
+    # Set DPI for new workflow if enabled
+    if hasattr(instance, '_should_use_new_print_workflow') and instance._should_use_new_print_workflow():
+        dpi = instance.get_printer_dpi_config()
+        # Add DPI info to image metadata for proper 1:1 printing
+        im.info['dpi'] = (dpi, dpi)
+        print(f"Created text image with dimensions {final_width}x{final_height} at {dpi} DPI (offset: {offset_x}, {offset_y})")
+    
     return im
 
 @get('/api/preview/text')
@@ -478,7 +536,11 @@ def print_text():
     im = create_label_im(**context)
     if DEBUG: im.save('sample-out.png')
 
-    return instance.print_label(im, **context)
+    # Choose print workflow based on configuration
+    if hasattr(instance, '_should_use_new_print_workflow') and instance._should_use_new_print_workflow():
+        return instance.print_label_direct(im, **context)
+    else:
+        return instance.print_label(im, **context)
 
 
 def main():

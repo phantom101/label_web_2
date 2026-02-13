@@ -66,6 +66,58 @@ class implementation:
         """Check if CUPS should be used based on configuration flag. Defaults to False."""
         return self.CONFIG.get('PRINTER', {}).get('USE_CUPS', False)
 
+    def _should_use_new_print_workflow(self):
+        """Check if new print workflow should be used based on configuration flag. Defaults to False."""
+        return self.CONFIG.get('PRINTER', {}).get('USE_NEW_PRINT_WORKFLOW', False)
+
+    def get_printer_dpi_config(self):
+        """Get printer DPI from configuration, with fallback to 203 DPI."""
+        return self.CONFIG.get('PRINTER', {}).get('PRINTER_DPI', 203)
+
+    def get_label_offset_config(self, label_size=None):
+        """Get label offset configuration for specific label size in new workflow."""
+        if not label_size:
+            return {
+                'enabled': False,
+                'offset_x': 0,
+                'offset_y': 0
+            }
+        
+        # Get the label configuration
+        label_config = self.CONFIG.get('PRINTER', {}).get('LABEL_PRINTABLE_AREA', {})
+        
+        if label_size not in label_config:
+            return {
+                'enabled': False,
+                'offset_x': 0,
+                'offset_y': 0
+            }
+        
+        label_data = label_config[label_size]
+        
+        # Handle both old format ([width, height]) and new format ({dimensions: [], offset: {}})
+        if isinstance(label_data, list):
+            # Old format - no offset support
+            return {
+                'enabled': False,
+                'offset_x': 0,
+                'offset_y': 0
+            }
+        elif isinstance(label_data, dict):
+            # New format with offset support
+            offset_config = label_data.get('offset', {})
+            return {
+                'enabled': offset_config.get('enabled', False),
+                'offset_x': offset_config.get('offset_x', 0),
+                'offset_y': offset_config.get('offset_y', 0)
+            }
+        
+        return {
+            'enabled': False,
+            'offset_x': 0,
+            'offset_y': 0
+        }
+
     def _parse_media_name(self, media_name):
         # CUPS media names are often like 'na_index-4x6_4x6in' or 'iso_a4_210x297mm'
         # We'll try to extract the size part for short name, and a readable long name
@@ -285,10 +337,19 @@ class implementation:
         def get_from_config():
             if 'PRINTER' in self.CONFIG and 'LABEL_PRINTABLE_AREA' in self.CONFIG['PRINTER']:
                 if label_size in self.CONFIG['PRINTER']['LABEL_PRINTABLE_AREA']:
-                    printable_area = self.CONFIG['PRINTER']['LABEL_PRINTABLE_AREA'][label_size]
-                    print(f"Info: Using dimensions from config for '{label_size}': {printable_area}")
-
-                    return tuple(printable_area)
+                    label_data = self.CONFIG['PRINTER']['LABEL_PRINTABLE_AREA'][label_size]
+                    
+                    # Handle both old format ([width, height]) and new format ({dimensions: [], offset: {}})
+                    if isinstance(label_data, list):
+                        # Old format
+                        print(f"Info: Using dimensions from config for '{label_size}': {label_data}")
+                        return tuple(label_data)
+                    elif isinstance(label_data, dict):
+                        # New format
+                        dimensions = label_data.get('dimensions', [])
+                        if dimensions:
+                            print(f"Info: Using dimensions from config for '{label_size}': {dimensions}")
+                            return tuple(dimensions)
             return None
 
         try:
@@ -422,13 +483,50 @@ class implementation:
                     # CUPS is disabled, pass media size directly without verification
                     should_add_media = True
 
-                if should_add_media:
-                    options["media"] = cups_media_name
+            if should_add_media:
+                options["media"] = cups_media_name
 
             print(printer_name, options)
             conn.printFile(printer_name, 'sample-out.png', "grocy", options)
 
             return_dict['success'] = True
+        except Exception as e:
+            return_dict['success'] = False
+            return_dict['message'] = str(e)
+        return return_dict
+
+    def print_label_direct(self, im, **context):
+        """
+        New print workflow: Print image 1:1 without additional size information.
+        The image is assumed to be already in the correct label dimensions.
+        """
+        return_dict = {'success': False, 'message': ''}
+        try:
+            dpi = self.get_printer_dpi_config()
+            print(f"Using new print workflow - printing image 1:1 at {dpi} DPI")
+            print(f"Image size: {im.size}")
+            
+            # Save the image with the configured DPI
+            im.save('sample-out.png', dpi=(dpi, dpi))
+            
+            quantity = context.get("quantity", 1)
+            conn = self._get_conn()
+            printer_name = context.get("printer")
+            if printer_name is None:
+                print("No printer specified in Context")
+                printer_name = self.CONFIG['PRINTER'].get("PRINTER")
+            if printer_name is None:
+                print("No printer specified in Config")
+                printer_name = str(conn.getDefault())
+
+            # Build print options with ONLY copies - no media size information
+            options = {"copies": str(quantity)}
+
+            print(f"Printing to {printer_name} with options: {options}")
+            conn.printFile(printer_name, 'sample-out.png', "grocy", options)
+
+            return_dict['success'] = True
+            return_dict['message'] = f"Successfully printed {quantity} label(s) using 1:1 workflow at {dpi} DPI"
         except Exception as e:
             return_dict['success'] = False
             return_dict['message'] = str(e)
